@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-q46-^snf8e)b)9w-!%6j5getqwri75at5w!fc9w=0fa@par@b8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['api.safarikonnect.com','www.api.safarikonnect.com','safarikonnect.com','www.safarikonnect.com','localhost','127.0.0.1','192.168.100.17']
 
 # APPEND_SLASH=False
 
@@ -101,6 +101,14 @@ DATABASES = {
     }
 }
 
+EMAIL_HOST = os.getenv('EMAIL_HOST')
+EMAIL_PORT = os.getenv('EMAIL_PORT')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+TEXT_SMS_API_KEY= os.getenv('TEXT_SMS_API_KEY')
+TEXT_SMS_SENDER_ID =  os.getenv('TEXT_SMS_SENDER_ID')
+TEXT_SMS_PARTNER_ID =  os.getenv('TEXT_SMS_PARTNER_ID')
+TEXT_SMS_API_URL =  os.getenv('TEXT_SMS_API_URL')
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -189,4 +197,59 @@ CORS_ALLOWED_HEADERS = [
     'x-requested-with',
 ]
 
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'ERROR',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'django_error.log'),
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'app': {
+            'handlers': ['console', 'file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+}
+
+# Ensure logs directory exists
+os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
+PAYSTACK_WEBHOOK_SECRET = os.getenv('PAYSTACK_WEBHOOK_SECRET')
+PAYSTACK_DEFAULT_CURRENCY = os.getenv('PAYSTACK_DEFAULT_CURRENCY')

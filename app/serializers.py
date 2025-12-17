@@ -110,10 +110,52 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ['vehicle_color_id', 'vehicle_plate_number', 'vehicle_type_id', 
-                 'driver_license_number', 'driver_id']
+                 'driver_license_number', 'driver_id', 'vehicle_make_id', 'vehicle_model_id']
+
+class ProfileResponseSerializer(serializers.ModelSerializer):
+    vehicle_color = serializers.SerializerMethodField()
+    vehicle_type = serializers.SerializerMethodField()
+    vehicle_make = serializers.SerializerMethodField()
+    vehicle_model = serializers.SerializerMethodField()
+    class Meta:
+        model = Profile
+        fields = ['vehicle_color', 'vehicle_plate_number', 'vehicle_type', 
+                 'driver_license_number', 'driver_id', 'vehicle_make', 'vehicle_model']
+    def get_vehicle_color(self, obj):
+        if obj.vehicle_color:
+            return {
+                'id': obj.vehicle_color.id,
+                'name': obj.vehicle_color.name
+            }
+        else:
+            return None
+    def get_vehicle_type(self, obj):
+        if obj.vehicle_type:
+            return {
+                'id': obj.vehicle_type.id,
+                'name': obj.vehicle_type.name
+            }
+        else:
+            return None
+    def get_vehicle_make(self, obj):
+        if obj.vehicle_make:
+            return {
+                'id': obj.vehicle_make.id,
+                'name': obj.vehicle_make.name
+            }
+        else:
+            return None
+    def get_vehicle_model(self, obj):
+        if obj.vehicle_model:
+            return {
+                'id': obj.vehicle_model.id,
+                'name': obj.vehicle_model.name
+            }
+        else:
+            return None
 
 class UserResponseSerializer(serializers.ModelSerializer):
-    profile = ProfileSerializer(read_only=True)
+    profile = ProfileResponseSerializer(read_only=True)
     formatted_created_at = serializers.SerializerMethodField()
     formatted_updated_at = serializers.SerializerMethodField()
 
@@ -147,18 +189,11 @@ class CompleteProfileSerializer(serializers.ModelSerializer):
         fields = ['name', 'phone_number', 'email', 'profile']
 
     def update(self, instance, validated_data):
-        profile_data = self.context.get('profile_data', {})
+        profile_data = self.context.get('profile_data', {}).copy()
         try:
             profile = instance.profile
         except Profile.DoesNotExist:
             profile = None
-        # if profile:
-        #     for attr, value in profile_data.items():
-        #         setattr(profile, attr, value)
-        #     profile.save()
-        # else:
-        #     profile = Profile.objects.create(user=instance, **profile_data)
-        # profile = instance.profile
         
         # Update user data
         for attr, value in validated_data.items():
@@ -166,12 +201,90 @@ class CompleteProfileSerializer(serializers.ModelSerializer):
         
         # Update profile data if user is a driver
         if instance.role == 'DRIVER' and profile_data:
-            if not profile:
-                profile = Profile.objects.create(user=instance, **profile_data)
-            else:
-                for attr, value in profile_data.items():
-                    setattr(profile, attr, value)
-                profile.save()
+            # Only extract valid Profile fields
+            valid_profile_fields = {
+                'vehicle_color_id', 'vehicle_color',
+                'vehicle_type_id', 'vehicle_type',
+                'vehicle_make_id','vehicle_make',
+                'vehicle_model_id','vehicle_model',
+                'vehicle_plate_number',
+                'driver_license_number',
+                'driver_id'
+            }
+            
+            # Filter profile_data to only include valid Profile fields
+            filtered_profile_data = {
+                k: v for k, v in profile_data.items() 
+                if k in valid_profile_fields and v is not None and v != ''
+            }
+            
+            # Handle foreign key fields - convert IDs to instances
+            if 'vehicle_color_id' in filtered_profile_data:
+                vehicle_color_id = filtered_profile_data.pop('vehicle_color_id')
+                if vehicle_color_id:
+                    try:
+                        filtered_profile_data['vehicle_color'] = VehicleColor.objects.get(id=int(vehicle_color_id))
+                    except (ValueError, VehicleColor.DoesNotExist):
+                        filtered_profile_data['vehicle_color'] = None
+            elif 'vehicle_color' in filtered_profile_data:
+                vehicle_color_id = filtered_profile_data.pop('vehicle_color')
+                if vehicle_color_id:
+                    try:
+                        filtered_profile_data['vehicle_color'] = VehicleColor.objects.get(id=int(vehicle_color_id))
+                    except (ValueError, VehicleColor.DoesNotExist):
+                        filtered_profile_data['vehicle_color'] = None
+            
+            if 'vehicle_type_id' in filtered_profile_data:
+                vehicle_type_id = filtered_profile_data.pop('vehicle_type_id')
+                if vehicle_type_id:
+                    try:
+                        filtered_profile_data['vehicle_type'] = VehicleType.objects.get(id=int(vehicle_type_id))
+                    except (ValueError, VehicleType.DoesNotExist):
+                        filtered_profile_data['vehicle_type'] = None
+            elif 'vehicle_type' in filtered_profile_data:
+                vehicle_type_id = filtered_profile_data.pop('vehicle_type')
+                if vehicle_type_id:
+                    try:
+                        filtered_profile_data['vehicle_type'] = VehicleType.objects.get(id=int(vehicle_type_id))
+                    except (ValueError, VehicleType.DoesNotExist):
+                        filtered_profile_data['vehicle_type'] = None
+            
+            if 'vehicle_make_id' in filtered_profile_data:
+                vehicle_make_id = filtered_profile_data.pop('vehicle_make_id')
+                if vehicle_make_id:
+                    try:
+                        filtered_profile_data['vehicle_make'] = VehicleMake.objects.get(id=int(vehicle_make_id))
+                    except (ValueError, VehicleMake.DoesNotExist):
+                        filtered_profile_data['vehicle_make'] = None
+            elif 'vehicle_make' in filtered_profile_data:
+                vehicle_make_id = filtered_profile_data.pop('vehicle_make')
+                if vehicle_make_id:
+                    try:
+                        filtered_profile_data['vehicle_make'] = VehicleMake.objects.get(id=int(vehicle_make_id))
+                    except (ValueError, VehicleMake.DoesNotExist):
+                        filtered_profile_data['vehicle_make'] = None
+            if 'vehicle_model_id' in filtered_profile_data:
+                vehicle_model_id = filtered_profile_data.pop('vehicle_model_id')
+                if vehicle_model_id:
+                    try:
+                        filtered_profile_data['vehicle_model'] = VehicleModel.objects.get(id=int(vehicle_model_id))
+                    except (ValueError, VehicleModel.DoesNotExist):
+                        filtered_profile_data['vehicle_model'] = None
+            elif 'vehicle_model' in filtered_profile_data:
+                vehicle_model_id = filtered_profile_data.pop('vehicle_model')
+                if vehicle_model_id:
+                    try:
+                        filtered_profile_data['vehicle_model'] = VehicleModel.objects.get(id=int(vehicle_model_id))
+                    except (ValueError, VehicleModel.DoesNotExist):
+                        filtered_profile_data['vehicle_model'] = None
+                        
+            if filtered_profile_data:
+                if not profile:
+                    profile = Profile.objects.create(user=instance, **filtered_profile_data)
+                else:
+                    for attr, value in filtered_profile_data.items():
+                        setattr(profile, attr, value)
+                    profile.save()
         
         instance.save()
         return instance
@@ -478,6 +591,8 @@ class StatisticsSerializer(serializers.Serializer):
 # Ride booking serializers
 class RideSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
+    driver = UserResponseSerializer(read_only=True)
+    driver_id = serializers.SerializerMethodField()
     driver_name = serializers.SerializerMethodField()
     formatted_requested_at = serializers.SerializerMethodField()
     formatted_accepted_at = serializers.SerializerMethodField()
@@ -487,16 +602,18 @@ class RideSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ride
         fields = [
-            'id', 'customer', 'customer_name', 'driver', 'driver_name',
+            'id', 'customer', 'customer_name', 'driver','driver_id', 'driver_name',
             'pickup_location', 'dropoff_location', 'pickup_latitude', 'pickup_longitude',
             'dropoff_latitude', 'dropoff_longitude', 'fare', 'estimated_fare',
             'distance', 'estimated_distance', 'estimated_duration', 'status',
             'requested_at', 'formatted_requested_at', 'accepted_at', 'formatted_accepted_at',
             'started_at', 'formatted_started_at', 'completed_at', 'formatted_completed_at',
             'cancelled_at', 'cancelled_by', 'cancel_reason', 'notes',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at', 'rating', 'review', 'reviewTags'
         ]
         read_only_fields = ['customer', 'driver', 'accepted_at', 'started_at', 'completed_at', 'cancelled_at']
+    def get_driver_id(self, obj):
+        return obj.driver.id if obj.driver else None
 
     def get_customer_name(self, obj):
         return obj.customer.name if obj.customer else None
@@ -533,7 +650,7 @@ class RideCreateSerializer(serializers.ModelSerializer):
         fields = [
             'pickup_location', 'dropoff_location', 'pickup_latitude', 'pickup_longitude',
             'dropoff_latitude', 'dropoff_longitude', 'estimated_fare', 'estimated_distance',
-            'estimated_duration', 'notes'
+            'estimated_duration', 'notes', 'rating', 'review', 'reviewTags'
         ]
 
     def validate(self, data):

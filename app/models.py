@@ -199,6 +199,8 @@ class Profile(models.Model):
     vehicle_type = models.ForeignKey(VehicleType, on_delete=models.SET_NULL, null=True, blank=True)
     driver_license_number = models.CharField(max_length=255, unique=True, null=True, blank=True)
     driver_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    vehicle_make = models.ForeignKey(VehicleMake, on_delete=models.SET_NULL, null=True, blank=True)
+    vehicle_model = models.ForeignKey(VehicleModel, on_delete=models.SET_NULL, null=True, blank=True)
 
     def sync(self, data):
         for key, value in data.items():
@@ -506,6 +508,9 @@ class Ride(models.Model):
     notes = models.TextField(null=True, blank=True)  # Additional notes from customer
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    rating = models.IntegerField(null=True, blank=True)
+    review = models.TextField(null=True, blank=True)
+    reviewTags = models.JSONField(null=True, blank=True)
 
     @property
     def formatted_requested_at(self):

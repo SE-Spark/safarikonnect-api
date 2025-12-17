@@ -3,7 +3,7 @@ import json
 import hmac
 import hashlib
 from decimal import Decimal
-
+from django.conf import settings
 import requests
 
 
@@ -13,9 +13,9 @@ class PaymentProcessingModule:
     """
 
     BASE_URL = os.getenv('PAYSTACK_BASE_URL', 'https://api.paystack.co')
-    SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY') or os.getenv('PAYSTACK_API_KEY')
-    WEBHOOK_SECRET = os.getenv('PAYSTACK_WEBHOOK_SECRET') or SECRET_KEY
-    DEFAULT_CURRENCY = os.getenv('PAYSTACK_DEFAULT_CURRENCY', 'KES')
+    SECRET_KEY = settings.PAYSTACK_SECRET_KEY
+    WEBHOOK_SECRET = settings.PAYSTACK_WEBHOOK_SECRET or SECRET_KEY
+    DEFAULT_CURRENCY = settings.PAYSTACK_DEFAULT_CURRENCY or 'KES'
 
     @classmethod
     def _headers(cls):
@@ -61,12 +61,12 @@ class PaymentProcessingModule:
 
         if meta:
             payload["metadata"] = meta
-
+        
         response = requests.post(
             f"{cls.BASE_URL}/transaction/initialize",
             headers=cls._headers(),
             json=payload,
-            timeout=15,
+            # timeout=15,
         )
         response.raise_for_status()
         return response.json()
@@ -145,7 +145,7 @@ class PaymentProcessingModule:
         type = "nuban" or "mobile_money"
         name = name of the recipient/customer
         account_number = account number of the bank or mobile money provider
-        bank_code = bank code of the bank or mobile money provider
+        bank_code = bank code of the bank or mobile money provider(MPESA,ATL_KE, 97 for telkom kenya)
         currency = currency of the transaction; only kes is supported by default
         """
 
@@ -159,7 +159,7 @@ class PaymentProcessingModule:
 
         if metadata:
             payload["metadata"] = metadata
-
+        
         response = requests.post(
             f"{cls.BASE_URL}/transferrecipient",
             headers=cls._headers(),

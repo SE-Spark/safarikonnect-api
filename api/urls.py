@@ -16,13 +16,22 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path,include
+from django.core.cache import cache
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from django.http import JsonResponse
+
+def status_view(request):
+    return JsonResponse({"status": "active"})
+
+def clear_cache_view(request):
+    cache.clear()
+    return JsonResponse({"message": "Cache cleared successfully"})
 # Swagger schema view
 schema_view = get_schema_view(
     openapi.Info(
-        title="The Eye",
+        title="Safari Konnect",
         default_version='v1',
         description="API documentation",
         terms_of_service="https://www.google.com/policies/terms/",
@@ -34,8 +43,10 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('', status_view, name='status'),
     path('admin/', admin.site.urls),
     path('api/', include('app.urls')),
+    path('clear-cache/', clear_cache_view, name='clear-cache'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),  # Swagger UI
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

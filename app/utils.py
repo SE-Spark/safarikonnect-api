@@ -1,15 +1,14 @@
-
 import random, smtplib, os, requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
+from django.conf import settings
 
-load_dotenv()
 
-EMAIL_HOST = os.getenv('EMAIL_HOST')
-EMAIL_PORT = os.getenv('EMAIL_PORT')
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+EMAIL_HOST = settings.EMAIL_HOST
+EMAIL_PORT = settings.EMAIL_PORT
+EMAIL_HOST_USER = settings.EMAIL_HOST_USER
+EMAIL_HOST_PASSWORD = settings.EMAIL_HOST_PASSWORD
+
 
 def send_verification_email(email: str, verification_code: str):
     """Send a verification email with the provided code."""
@@ -18,8 +17,8 @@ def send_verification_email(email: str, verification_code: str):
     body = f"Your verification code is: {verification_code}"
 
     # Set up the email server
-    with smtplib.SMTP_SSL(EMAIL_HOST, EMAIL_PORT) as server:
-        # server.starttls()
+    with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+        server.starttls()
         server.login(EMAIL_HOST_USER, EMAIL_HOST_PASSWORD)
         # Create the email message
         msg = MIMEMultipart()
@@ -32,10 +31,10 @@ def send_verification_email(email: str, verification_code: str):
         server.send_message(msg)
 
 def send_verification_sms(phone_number: str, verification_code: str):
-        api_key = os.getenv('TEXT_SMS_API_KEY')
-        api_sender_id =  os.getenv('TEXT_SMS_SENDER_ID')
-        api_partner_id =  os.getenv('TEXT_SMS_PARTNER_ID')
-        base_url =  os.getenv('TEXT_SMS_API_URL')
+        api_key = settings.TEXT_SMS_API_KEY
+        api_sender_id =  settings.TEXT_SMS_SENDER_ID
+        api_partner_id =  settings.TEXT_SMS_PARTNER_ID
+        base_url =  settings.TEXT_SMS_API_URL
         message = f"Your verification code is: {verification_code}"
         
         params = {

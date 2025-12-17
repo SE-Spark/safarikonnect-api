@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
-from rest_framework import serializers
+from rest_framework import serializers,filters
 from django.utils import timezone
-from datetime import timedelta,datetime
+from datetime import timedelta,datetime, timezone
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -64,7 +64,7 @@ class AuthViewSet(viewsets.ViewSet):
             )
         # Send verification code
         otp_code = generate_verification_code()
-        OTP.objects.create(contact_info=email_or_phone,otp_code=otp_code,expires_at=datetime.utcnow() + timedelta(seconds=300))
+        OTP.objects.create(contact_info=email_or_phone,otp_code=otp_code,expires_at=datetime.now(timezone.utc) + timedelta(seconds=300))
         
         if "@" in email_or_phone:
             send_verification_email(email_or_phone, otp_code)
@@ -78,7 +78,7 @@ class AuthViewSet(viewsets.ViewSet):
         serializer = UserRegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         email_or_phone = serializer.validated_data['email_or_phone_number']
-        now = timezone.now()
+        now = datetime.now(timezone.utc)
         code = serializer.validated_data['verification_code']
         if not OTP.objects.filter(contact_info=email_or_phone,otp_code=code, expires_at__gt = now).exists():
             return Response(
@@ -208,7 +208,7 @@ class AuthViewSet(viewsets.ViewSet):
         OTP.objects.create(
             contact_info=email_or_phone,
             otp_code=otp_code,
-            expires_at=datetime.utcnow() + timedelta(seconds=300)
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=300)
         )
         
         if "@" in email_or_phone:
@@ -227,7 +227,7 @@ class AuthViewSet(viewsets.ViewSet):
         email_or_phone = serializer.validated_data['email_or_phone_number']
         verification_code = serializer.validated_data['verification_code']
         new_password = serializer.validated_data['new_password']
-        now = timezone.now()
+        now = datetime.now(timezone.utc)
         
         # Verify OTP
         if not OTP.objects.filter(
@@ -630,7 +630,7 @@ class BidViewSet(viewsets.ModelViewSet):
             )
             
         bid.status = 'AWARDED'
-        bid.awarded_at = timezone.now()
+        bid.awarded_at = datetime.now(timezone.utc)
         bid.save()
         
         # Update other bids for this business
@@ -660,7 +660,7 @@ class BidViewSet(viewsets.ModelViewSet):
         bid.status = 'CANCELLED'
         bid.cancelled_by = request.user
         bid.cancel_reason = reason
-        bid.cancelled_at = timezone.now()
+        bid.cancelled_at = datetime.now(timezone.utc)
         bid.save()
         
         serializer = self.get_serializer(bid)
@@ -719,8 +719,13 @@ class VehicleMakeViewSet(viewsets.ModelViewSet):
 
 class VehicleModelViewSet(viewsets.ModelViewSet):
     queryset = VehicleModel.objects.all()
-    serializer_class = VehicleModelSerializer
+    serializer_class = VehicleModelSerializer    
     permission_classes = [IsAuthenticated]
+    # filter by make_id using filterbackend
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name','make__name','make_id']
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -832,7 +837,7 @@ class TransactionalWalletViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        if transaction.scheduled_release_date and transaction.scheduled_release_date > timezone.now():
+        if transaction.scheduled_release_date and transaction.scheduled_release_date > datetime.now(timezone.utc):
             return Response(
                 {"detail": "Cannot release funds before scheduled date"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -919,11 +924,15 @@ class PaymentTransactionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def withdraw(self,request):
         user = request.user
+        account_number = request.data.get("account_number",0)
+        bank_code = request.data.get("bank_code",0)
+        channelType = request.data.get("type","nuban")
+        currency =  request.data.get("currency","kes")
+
         wallet = Wallet.objects.get(user=user)
         if wallet.active_balance < request.data.get("amount",0):
             return Response({'detail': 'Insufficient balance'}, status=status.HTTP_400_BAD_REQUEST)
-        wallet.active_balance -= request.data.get("amount",0)
-        wallet.save()
+        
         transaction = PaymentTransaction.objects.create(
             user=user,
             amount=request.data.get("amount",0),
@@ -931,16 +940,19 @@ class PaymentTransactionViewSet(viewsets.ModelViewSet):
             status='PENDING',
             transaction_reference=str(uuid.uuid4()),
         )
-        recipient = PaymentProcessingModule.create_recipient(name=user.first_name + ' ' + user.last_name, account=user.account_number, bank_code=user.bank_code, type="nuban")
-        if recipient.get('status') == 'success':
+        recipient = PaymentProcessingModule.create_recipient(name=user.name, account= account_number, bank_code= bank_code, type=channelType,currency=currency)
+        if recipient.get('status') == True:
             withdrawal = PaymentProcessingModule.withdraw_from_wallet(amount=request.data.get("amount",0), recipient_code=recipient.get('data').get('recipient_code'), reason='Withdrawal from wallet')
-            if withdrawal.get('status') == 'success':
+            if withdrawal.get('status') == True:
                 transaction.status = 'COMPLETED'
                 transaction.save()
+                wallet.active_balance -= request.data.get("amount",0)
+                wallet.save()
                 return Response({'detail': 'Withdrawal successful'}, status=status.HTTP_200_OK)
-            else:
-                return Response({'detail': 'Withdrawal failed'}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'detail': 'Withdrawal successful'}, status=status.HTTP_200_OK)
+        # failed case
+        transaction.status = 'FAILED'
+        transaction.save()
+        return Response({'detail': 'Withdrawal failed'}, status=status.HTTP_400_BAD_REQUEST)
     # top up wallet
     @action(detail=False, methods=['post'])
     def top_up(self,request):
@@ -950,24 +962,49 @@ class PaymentTransactionViewSet(viewsets.ModelViewSet):
             "amount": request.data.get("amount",100),
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "phone": user.phone,
-            "current": request.data.get("current",None),
+            "phone": user.phone_number,
+            "currency": request.data.get("currency",None),
         }
         # i will use paystack to initiate payment
         try:
             initializePaymentRes = PaymentProcessingModule.initiatePayment(**paymentInfo)
         except Exception as e:
+            print(e)
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        if initializePaymentRes.get('status') == 'success':
+        print(initializePaymentRes)
+        if initializePaymentRes.get('status') == True:
             transaction = PaymentTransaction.objects.create(
                 user=user,
-                amount=initializePaymentRes.get('data').get('amount'),
+                amount=paymentInfo.get('amount'),
                 transaction_type='DEPOSIT',
                 transaction_reference=initializePaymentRes.get('data').get('reference'),
                 status='PENDING',
             )
             return Response(initializePaymentRes)
         return Response({'detail': 'Payment failed'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def verify_payment(self,request):
+        reference = request.data.get('reference')
+        transaction = PaymentTransaction.objects.filter(transaction_reference=reference).first()
+        if not reference or not transaction:
+            return Response({'detail': 'Reference is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            payment = PaymentProcessingModule.verifyPayment(reference)
+            print(payment)
+            if payment.get('data').get('status') == 'success':
+                transaction.status = 'SUCCESS'
+                transaction.save()
+                wallet = Wallet.objects.get(user=transaction.user)
+                wallet.active_balance += transaction.amount
+                wallet.save()
+                return Response({'detail': 'Payment verified'}, status=status.HTTP_200_OK)                
+        except Exception as ex:
+            pass
+        transaction.status = 'Failed'
+        transaction.save()
+        return Response({'detail': 'Payment not verified'}, status=status.HTTP_400_BAD_REQUEST)
+
 # add feedback, geofence, ticket and statistics
 
 class FeedbackViewSet(viewsets.ModelViewSet):
@@ -1085,10 +1122,10 @@ class StatisticsViewSet(viewsets.ViewSet):
             'total_amount': Transaction.objects.aggregate(Sum('amount'))['amount__sum'] or 0,
             'total_users': User.objects.count(),
             'active_users': User.objects.filter(
-                last_active__gte=timezone.now() - timedelta(days=30)
+                last_active__gte=datetime.now(timezone.utc) - timedelta(days=30)
             ).count(),
             'new_users': User.objects.filter(
-                created_at__gte=timezone.now() - timedelta(days=30)
+                created_at__gte=datetime.now(timezone.utc) - timedelta(days=30)
             ).count(),
             'total_feedback': Feedback.objects.count(),
             'average_driver_rating': Feedback.objects.aggregate(
@@ -1248,7 +1285,7 @@ class RideViewSet(viewsets.ModelViewSet):
         # Accept the ride
         ride.driver = driver
         ride.status = 'ACCEPTED'
-        ride.accepted_at = timezone.now()
+        ride.accepted_at = datetime.now(timezone.utc)
         ride.save()
         
         # Update driver availability to BUSY
@@ -1278,7 +1315,7 @@ class RideViewSet(viewsets.ModelViewSet):
             )
         
         ride.status = 'IN_PROGRESS'
-        ride.started_at = timezone.now()
+        ride.started_at = datetime.now(timezone.utc)
         ride.save()
         
         serializer = self.get_serializer(ride)
@@ -1334,7 +1371,7 @@ class RideViewSet(viewsets.ModelViewSet):
             ride.fare = fare
         
         ride.status = 'COMPLETED'
-        ride.completed_at = timezone.now()
+        ride.completed_at = datetime.now(timezone.utc)
         ride.save()
         
         # Update driver availability back to AVAILABLE
@@ -1371,7 +1408,7 @@ class RideViewSet(viewsets.ModelViewSet):
         ride.status = 'CANCELLED'
         ride.cancelled_by = user
         ride.cancel_reason = cancel_reason
-        ride.cancelled_at = timezone.now()
+        ride.cancelled_at = datetime.now(timezone.utc)
         ride.save()
         
         # If driver cancelled, update their availability
@@ -1434,6 +1471,19 @@ class RideViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(active_ride)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def rate_ride(self, request, pk=None):
+        """Rate the ride"""
+        ride = self.get_object()
+        rating = request.data.get('rating')
+        review = request.data.get('review')
+        reviewTags = request.data.get('reviewTags')
+        ride.rating = rating
+        ride.review = review
+        ride.reviewTags = reviewTags
+        ride.save()
+        return Response({'detail': 'Ride rated successfully'}, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 def payment_webhook(request):
@@ -1459,3 +1509,6 @@ def payment_webhook(request):
         else:
             return Response({'detail': 'Payment failed'}, status=status.HTTP_400_BAD_REQUEST)
     return Response({'detail': 'Invalid event'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
